@@ -1,10 +1,11 @@
+
 <!DOCTYPE html>
 <html lang="tr">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Market Dashboard</title>
-<script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://unpkg.com/lightweight-charts@3.8.0/dist/lightweight-charts.standalone.production.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 <style>
 :root {
@@ -449,6 +450,8 @@ let symbolOrder = JSON.parse(localStorage.getItem('mh_order') || 'null');
 // ═══════════════════════════════════════════════════════════════
 // DEMO SEED (fallback until real data arrives)
 // ═══════════════════════════════════════════════════════════════
+
+
 const SEED_PRICES = {
   BTCUSDT:68420, ETHUSDT:3240, SOLUSDT:142, DOGEUSDT:0.142,
   FLOKIUSDT:0.000198, APTUSDT:8.4, ARBUSDT:0.89, DOTUSDT:7.2,
@@ -459,7 +462,6 @@ const SEED_PRICES = {
   USDTRY:32.4, EURUSD:1.087, EURTRY:35.2,
   XAUUSD:2342, XAGUSD:28.4, VIX:14.8, BCOUSD:82.3, TFM:18.4,
 };
-
 function loadDemoData() {
   symbols.forEach(s => {
     const base = SEED_PRICES[s.id] || 100;
@@ -828,7 +830,7 @@ function srcLabel(src) {
 
 function initMiniChart(id) {
   const wrap = document.getElementById('chartWrap-' + id);
-  if (!wrap) return;
+  if (!wrap || !LightweightCharts) return;
   const p = prices[id];
   const isUp = !p || p.change >= 0;
   const color = isUp ? '#10b981' : '#ef4444';
@@ -843,8 +845,8 @@ function initMiniChart(id) {
     handleScroll:false, handleScale:false,
   });
 
-  const series = chart.addAreaSeries({
-    lineColor: color, topColor: color+'38', bottomColor: color+'00',
+  const series = chart.addLineSeries({
+    color: color,
     lineWidth:1.5, priceLineVisible:false, lastValueVisible:false,
   });
 
