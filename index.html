@@ -444,7 +444,7 @@ let symbolOrder = JSON.parse(localStorage.getItem('mh_order') || 'null');
 // ═══════════════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════════════
-(function init() {
+function init() {
   document.getElementById('apiBanner').classList.add('hidden'); // backend hardcoded
   loadDemoData();
   render();
@@ -455,7 +455,7 @@ let symbolOrder = JSON.parse(localStorage.getItem('mh_order') || 'null');
   setInterval(updateClock, 1000);
   updateClock();
   setInterval(updateDataStatusIndicator, 5000);
-})();
+}
 
 // ═══════════════════════════════════════════════════════════════
 // DEMO SEED (fallback until real data arrives)
@@ -1312,6 +1312,8 @@ function showToast(msg, isError=false, duration=3500, type='') {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(()=>t.classList.remove('show'), duration);
 }
+
+window.addEventListener("load", init);
 </script>
 </body>
 </html>
