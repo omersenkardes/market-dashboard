@@ -375,6 +375,17 @@ const CATEGORIES = {
 // cgId: CoinGecko id (for dominance/market-cap data)
 // fxBase/fxQuote: for Frankfurter API
 // tdSymbol: for Twelve Data API
+const SEED_PRICES = {
+  BTCUSDT:68420, ETHUSDT:3240, SOLUSDT:142, DOGEUSDT:0.142,
+  FLOKIUSDT:0.000198, APTUSDT:8.4, ARBUSDT:0.89, DOTUSDT:7.2,
+  FILUSDT:5.1, ARPAUSDT:0.047, ATOMUSDT:8.8, ENJUSDT:0.32,
+  GRTUSDT:0.18, AVAXUSDT:34, INJUSDT:21, BTCETH:21.1,
+  BTCD:54.2, ETHD:17.1, USDTD:4.8, ESDCD:8.2,
+  TOTAL:2.31e12, TOTAL2:1.12e12, TOTAL3:0.87e12,
+  USDTRY:32.4, EURUSD:1.087, EURTRY:35.2,
+  XAUUSD:2342, XAGUSD:28.4, VIX:14.8, BCOUSD:82.3, TFM:18.4,
+};
+
 let symbols = [
   // Kripto — Binance
   {id:'BTCUSDT',  name:'BTC/USDT',   cat:'crypto',    src:'binance', binanceTicker:'btcusdt'},
@@ -451,16 +462,6 @@ let symbolOrder = JSON.parse(localStorage.getItem('mh_order') || 'null');
 // ═══════════════════════════════════════════════════════════════
 
 
-const SEED_PRICES = {
-  BTCUSDT:68420, ETHUSDT:3240, SOLUSDT:142, DOGEUSDT:0.142,
-  FLOKIUSDT:0.000198, APTUSDT:8.4, ARBUSDT:0.89, DOTUSDT:7.2,
-  FILUSDT:5.1, ARPAUSDT:0.047, ATOMUSDT:8.8, ENJUSDT:0.32,
-  GRTUSDT:0.18, AVAXUSDT:34, INJUSDT:21, BTCETH:21.1,
-  BTCD:54.2, ETHD:17.1, USDTD:4.8, ESDCD:8.2,
-  TOTAL:2.31e12, TOTAL2:1.12e12, TOTAL3:0.87e12,
-  USDTRY:32.4, EURUSD:1.087, EURTRY:35.2,
-  XAUUSD:2342, XAGUSD:28.4, VIX:14.8, BCOUSD:82.3, TFM:18.4,
-};
 function loadDemoData() {
   symbols.forEach(s => {
     const base = SEED_PRICES[s.id] || 100;
