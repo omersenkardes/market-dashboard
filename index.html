@@ -503,9 +503,45 @@ let binanceConnected = false;
 let binanceWS = null; // kept for compatibility
 
 function startBinanceWS() {
-  // Use REST polling via backend instead of direct WS
-  fetchBinancePrices();
-  setInterval(fetchBinancePrices, 3000);
+  // Load real candle data for mini charts first, then start polling
+  loadMiniChartCandles().then(() => {
+    fetchBinancePrices();
+    setInterval(fetchBinancePrices, 3000);
+  });
+}
+
+async function loadMiniChartCandles() {
+  const cryptoSymbols = symbols.filter(s => s.src === 'binance' && !s.invertPrice);
+  // Load in batches of 5 to avoid rate limits
+  const batches = [];
+  for (let i = 0; i < cryptoSymbols.length; i += 5) {
+    batches.push(cryptoSymbols.slice(i, i + 5));
+  }
+  for (const batch of batches) {
+    await Promise.all(batch.map(async (sym) => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/binance/candles?symbol=${sym.binanceTicker.toUpperCase()}&interval=4h&limit=60`);
+        if (!res.ok) return;
+        const raw = await res.json();
+        if (!raw.candles || raw.candles.length === 0) return;
+        candleData[sym.id] = raw.candles.map(k => ({
+          time: parseInt(k.time),
+          open: parseFloat(k.open),
+          high: parseFloat(k.high),
+          low: parseFloat(k.low),
+          close: parseFloat(k.close),
+          volume: parseFloat(k.volume),
+        }));
+        // Update mini chart with real data
+        if (miniCharts[sym.id]) {
+          const data = candleData[sym.id].map(c => ({time: c.time, value: c.close}));
+          miniCharts[sym.id].series.setData(data);
+        }
+      } catch(e) {
+        console.warn('Mini chart candle load failed for', sym.id, e.message);
+      }
+    }));
+  }
 }
 
 async function fetchBinancePrices() {
@@ -559,6 +595,17 @@ async function fetchBinancePrices() {
 
       updateCardPrice(sym.id);
       checkAlarms(sym.id, price);
+
+      // Rebuild mini chart with real price direction
+      if (miniCharts[sym.id]) {
+        const isUp = prices[sym.id].change >= 0;
+        const color = isUp ? '#10b981' : '#ef4444';
+        // Update line color
+        miniCharts[sym.id].series.applyOptions({ color });
+        // Update last candle in data
+        const data = (candleData[sym.id] || []).map(c => ({time: c.time, value: c.close}));
+        if (data.length > 0) miniCharts[sym.id].series.setData(data);
+      }
 
       if (detailSymbol === sym.id && modalCandleSeries) {
         const last = candleData[sym.id]?.[candleData[sym.id].length - 1];
