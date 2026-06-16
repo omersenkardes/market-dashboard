@@ -497,78 +497,82 @@ function genCandles(basePrice, count, vol) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// DATA SOURCE 1: Binance WebSocket
+// DATA SOURCE 1: Binance REST (via backend proxy)
 // ═══════════════════════════════════════════════════════════════
-let binanceWS = null;
-let binanceReconnectTimer = null;
 let binanceConnected = false;
+let binanceWS = null; // kept for compatibility
 
 function startBinanceWS() {
-  const cryptoSymbols = symbols.filter(s => s.src === 'binance');
-  if (cryptoSymbols.length === 0) return;
-  const streams = cryptoSymbols.map(s => s.binanceTicker + '@miniTicker').join('/');
-  const url = `wss://stream.binance.com:9443/stream?streams=${streams}`;
-  connectBinanceWS(url);
+  // Use REST polling via backend instead of direct WS
+  fetchBinancePrices();
+  setInterval(fetchBinancePrices, 3000);
 }
 
-function connectBinanceWS(url) {
-  if (binanceWS) { try { binanceWS.close(); } catch(e){} }
-  binanceWS = new WebSocket(url);
+async function fetchBinancePrices() {
+  const cryptoSymbols = symbols.filter(s => s.src === 'binance');
+  if (!cryptoSymbols.length) return;
 
-  binanceWS.onopen = () => {
+  // Split into regular and inverted (ETHBTC)
+  const regular = cryptoSymbols.filter(s => !s.invertPrice);
+  const inverted = cryptoSymbols.filter(s => s.invertPrice);
+
+  const allTickers = [
+    ...regular.map(s => s.binanceTicker.toUpperCase()),
+    ...inverted.map(s => 'ETHBTC'),
+  ].join(',');
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/binance?symbols=${allTickers}`);
+    if (!res.ok) throw new Error('Backend ' + res.status);
+    const data = await res.json();
     binanceConnected = true;
-    showToast('✅ Binance bağlantısı kuruldu', false, 2000);
-    updateDataStatusIndicator();
-  };
 
-  binanceWS.onmessage = (evt) => {
-    const msg = JSON.parse(evt.data);
-    const tick = msg.data;
-    if (!tick) return;
-    const sym = symbols.find(s => s.src === 'binance' && s.binanceTicker === tick.s.toLowerCase());
-    if (!sym) return;
+    cryptoSymbols.forEach(sym => {
+      const ticker = sym.invertPrice ? 'ETHBTC' : sym.binanceTicker.toUpperCase();
+      const d = data[ticker];
+      if (!d || d.error || !d.price) return;
 
-    let price = parseFloat(tick.c);
-    if (sym.invertPrice) price = 1 / price;
-    const open  = sym.invertPrice ? 1/parseFloat(tick.o) : parseFloat(tick.o);
-    const high  = sym.invertPrice ? 1/parseFloat(tick.l) : parseFloat(tick.h);
-    const low   = sym.invertPrice ? 1/parseFloat(tick.h) : parseFloat(tick.l);
+      let price = parseFloat(d.price);
+      let open  = parseFloat(d.open);
+      let high  = parseFloat(d.high);
+      let low   = parseFloat(d.low);
+      if (sym.invertPrice) { price = 1/price; open = 1/open; high = 1/low; low = 1/high; }
 
-    prices[sym.id] = {
-      price, open, high, low,
-      change: ((price - open) / open) * 100,
-      vol: parseFloat(tick.v) * price,
-      updatedAt: Date.now(),
-      source: 'Binance WS',
-    };
+      prices[sym.id] = {
+        price, open, high, low,
+        change: parseFloat(d.change),
+        vol: parseFloat(d.volume),
+        updatedAt: Date.now(),
+        source: 'Binance REST',
+      };
 
-    // Push tick to candle data (update last candle)
-    if (candleData[sym.id] && candleData[sym.id].length > 0) {
-      const last = candleData[sym.id][candleData[sym.id].length - 1];
-      last.close = price;
-      last.high = Math.max(last.high, price);
-      last.low  = Math.min(last.low, price);
-      if (miniCharts[sym.id]) {
-        miniCharts[sym.id].series.update({time: last.time, value: price});
+      // Update mini chart last point
+      if (candleData[sym.id]?.length > 0) {
+        const last = candleData[sym.id][candleData[sym.id].length - 1];
+        last.close = price;
+        last.high = Math.max(last.high, price);
+        last.low  = Math.min(last.low, price);
+        if (miniCharts[sym.id]) {
+          miniCharts[sym.id].series.update({time: last.time, value: price});
+        }
       }
-    }
 
-    updateCardPrice(sym.id);
-    checkAlarms(sym.id, price);
-    if (detailSymbol === sym.id && modalCandleSeries) {
-      const last = candleData[sym.id][candleData[sym.id].length - 1];
-      modalCandleSeries.update(last);
-      updateModalMeta(sym.id);
-    }
-  };
+      updateCardPrice(sym.id);
+      checkAlarms(sym.id, price);
 
-  binanceWS.onerror = () => { binanceConnected = false; };
-  binanceWS.onclose = () => {
-    binanceConnected = false;
+      if (detailSymbol === sym.id && modalCandleSeries) {
+        const last = candleData[sym.id]?.[candleData[sym.id].length - 1];
+        if (last) { modalCandleSeries.update(last); }
+        updateModalMeta(sym.id);
+      }
+    });
+
     updateDataStatusIndicator();
-    clearTimeout(binanceReconnectTimer);
-    binanceReconnectTimer = setTimeout(() => connectBinanceWS(url), 5000);
-  };
+  } catch(e) {
+    binanceConnected = false;
+    console.warn('Binance REST error:', e.message);
+    updateDataStatusIndicator();
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -584,7 +588,7 @@ async function startCoinGeckoPolling() {
 async function fetchCoinGecko() {
   try {
     // Global data for dominance + total market caps
-    const res = await fetch('https://api.coingecko.com/api/v3/global');
+    const res = await fetch(`${BACKEND_URL}/dominance`);
     if (!res.ok) throw new Error('CG ' + res.status);
     const {data} = await res.json();
     cgLastFetch = Date.now();
@@ -651,7 +655,7 @@ async function fetchFrankfurter() {
   for (const [base, syms] of Object.entries(byBase)) {
     try {
       const quotes = syms.map(s => s.fxQuote).join(',');
-      const res = await fetch(`https://api.frankfurter.app/latest?from=${base}&to=${quotes}`);
+      const res = await fetch(`${BACKEND_URL}/forex?base=${base}&quotes=${quotes}`);
       if (!res.ok) throw new Error('Frankfurter ' + res.status);
       const data = await res.json();
       syms.forEach(s => {
@@ -910,16 +914,16 @@ async function fetchHistoricalCandles(sym, tf) {
     const ticker = sym.invertPrice ? sym.binanceTicker.replace('eth','BTC').replace('btc','ETH') : sym.binanceTicker.toUpperCase();
     const pair = sym.invertPrice ? 'ETHBTC' : ticker;
     try {
-      const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=${pair}&interval=${interval}&limit=200`);
+      const res = await fetch(`${BACKEND_URL}/binance/candles?symbol=${pair}&interval=${tf}&limit=200`);
       if (!res.ok) throw new Error();
       const raw = await res.json();
-      return raw.map(k => ({
-        time: Math.floor(k[0]/1000),
-        open: sym.invertPrice ? 1/parseFloat(k[1]) : parseFloat(k[1]),
-        high: sym.invertPrice ? 1/parseFloat(k[4]) : parseFloat(k[2]),
-        low:  sym.invertPrice ? 1/parseFloat(k[3]) : parseFloat(k[4]),  // note: inverted h/l swap
-        close: sym.invertPrice ? 1/parseFloat(k[4]) : parseFloat(k[4]),
-        volume: parseFloat(k[5]),
+      return (raw.candles || []).map(k => ({
+        time: parseInt(k.time),
+        open: sym.invertPrice ? 1/parseFloat(k.open) : parseFloat(k.open),
+        high: sym.invertPrice ? 1/parseFloat(k.low)  : parseFloat(k.high),
+        low:  sym.invertPrice ? 1/parseFloat(k.high) : parseFloat(k.low),
+        close: sym.invertPrice ? 1/parseFloat(k.close) : parseFloat(k.close),
+        volume: parseFloat(k.volume),
       })).sort((a,b)=>a.time-b.time);
     } catch(e) {
       console.warn('Binance klines failed', e);
@@ -1255,12 +1259,13 @@ function updateDataStatusIndicator() {
   const dot = document.getElementById('liveDot');
   const binanceSources = symbols.filter(s => s.src === 'binance');
   const liveCount = binanceSources.filter(s => prices[s.id]?.source === 'Binance WS').length;
-  if (binanceConnected && liveCount > 0) {
+  const restLive = symbols.filter(s => s.src === 'binance').some(s => prices[s.id]?.source === 'Binance REST');
+  if (binanceConnected && restLive) {
     el.textContent = '● CANLI';
     el.className = 'data-status live';
     dot.style.background = 'var(--up)';
-  } else if (liveCount > 0) {
-    el.textContent = '◐ Kısmi';
+  } else if (restLive) {
+    el.textContent = '◐ Bağlanıyor';
     el.className = 'data-status partial';
     dot.style.background = '#f59e0b';
   } else {
