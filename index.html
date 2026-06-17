@@ -419,7 +419,9 @@ async function fetchBinancePrices() {
 async function fetchCoinGecko() {
   try {
     const res = await fetch(`${BACKEND}/dominance`);
-    const {data} = await res.json();
+    const json = await res.json();
+    if (!json.data) { console.warn('CoinGecko: no data', json); return; }
+    const data = json.data;
     const btcD  = data.market_cap_percentage?.btc || 0;
     const ethD  = data.market_cap_percentage?.eth || 0;
     const usdtD = data.market_cap_percentage?.usdt || 0;
