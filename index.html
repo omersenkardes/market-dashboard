@@ -472,7 +472,7 @@ async function fetchTwelveData() {
     const res = await fetch(`${BACKEND}/prices?symbols=${encodeURIComponent(tickers)}`);
     const data = await res.json();
     tdSyms.forEach(s => {
-      const d = tdSyms.length===1 ? data : data[s.tds];
+      const d = data[s.tds];
       if (!d?.price) return;
       const price = parseFloat(d.price);
       const prev  = prices[s.id]?.price || price;
