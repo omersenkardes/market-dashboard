@@ -124,6 +124,7 @@ main{padding:14px 18px}
   </div>
   <div class="hdr-r">
     <button class="btn" id="dragBtn" onclick="toggleDrag()">✥ Düzenle</button>
+    <button class="btn" onclick="openTelegramSettings()">⚙️ Telegram</button>
     <button class="btn" onclick="openAllAlarms()">🔔 Alarmlar</button>
     <button class="btn primary" onclick="openPanel()">+ Sembol Ekle</button>
   </div>
@@ -205,18 +206,44 @@ main{padding:14px 18px}
 
 <!-- All Alarms -->
 <div class="overlay" id="allAlarmsOverlay" onclick="event.target===this&&this.classList.remove('open')">
-  <div class="alarm-modal" onclick="event.stopPropagation()" style="max-width:500px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-      <div style="font-size:15px;font-weight:700;color:var(--bright)">🔔 Tüm Alarmlar</div>
+  <div class="alarm-modal" onclick="event.stopPropagation()" style="max-width:520px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div style="font-size:15px;font-weight:700;color:var(--bright)">🔔 Alarmlar</div>
       <button class="xbtn" onclick="document.getElementById('allAlarmsOverlay').classList.remove('open')">✕</button>
     </div>
+    <div style="display:flex;gap:6px;margin-bottom:14px">
+      <button class="tab active" id="alarmTabActive" onclick="setAlarmTab('active')" style="border-radius:6px">🟢 Aktif</button>
+      <button class="tab" id="alarmTabTriggered" onclick="setAlarmTab('triggered')" style="border-radius:6px">⚫ Gerçekleşen</button>
+    </div>
     <div id="allAlarmsList"></div>
+  </div>
+</div>
+
+<!-- Telegram Settings -->
+<div class="overlay" id="telegramOverlay" onclick="event.target===this&&this.classList.remove('open')">
+  <div class="alarm-modal" onclick="event.stopPropagation()">
+    <div style="font-size:15px;font-weight:700;color:var(--bright);margin-bottom:3px">⚙️ Telegram Ayarları</div>
+    <div style="font-size:12px;color:var(--dim);margin-bottom:16px">Alarmlar kendi Telegram botuna gelsin</div>
+    <label class="fm-lbl">Bot Token</label>
+    <input class="fm-inp" type="text" id="tgToken" placeholder="123456:ABC-DEF...">
+    <label class="fm-lbl">Chat ID</label>
+    <input class="fm-inp" type="text" id="tgChatId" placeholder="528754252">
+    <div style="font-size:11px;color:var(--dim);margin:-6px 0 14px;line-height:1.5">
+      Kendi botunu oluşturmak için Telegram'da <b>@BotFather</b>'a <code>/newbot</code> yaz.<br>
+      Chat ID'ni öğrenmek için botuna <code>/start</code> yaz, sonra
+      <code>api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> adresinde "id" değerine bak.
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn" style="flex:1;justify-content:center" onclick="testTelegram()">Test Et</button>
+      <button class="btn primary" style="flex:1;justify-content:center" onclick="saveTelegramSettings()">Kaydet</button>
+    </div>
   </div>
 </div>
 
 <!-- Manage Panel -->
 <div class="panel-overlay" id="panelOverlay" onclick="event.target===this&&closePanel()">
   <div class="panel">
+
     <div style="display:flex;align-items:center;justify-content:space-between">
       <div style="font-size:14px;font-weight:700;color:var(--bright)">Sembol Yönetimi</div>
       <button class="xbtn" onclick="closePanel()">✕</button>
@@ -298,6 +325,7 @@ let symbols = [
   {id:'XAGUSD',   name:'XAG/USD',    cat:'commodity', src:'yahoo',      yts:'^SLV'},
   {id:'VIX',      name:'VIX',        cat:'commodity', src:'yahoo',      yts:'^VIX'},
   {id:'BCOUSD',   name:'BCO/USD',    cat:'commodity', src:'yahoo',      yts:'BZ=F'},
+  {id:'TTF',      name:'TTF Gas',    cat:'commodity', src:'yahoo',      yts:'TTF=F'},
 ];
 
 // ─── STATE ────────────────────────────────────────────────────
@@ -746,11 +774,13 @@ function saveAlarm() {
   const val = parseFloat(document.getElementById('alarmVal').value);
   if (isNaN(val)||val<=0) { toast('Geçerli bir değer gir',true); return; }
   const s = symbols.find(x=>x.id===curAlarmSym);
+  const tg = getTelegramCreds();
   const alarm = {
     id:Date.now(), sid:curAlarmSym, name:s?.name||curAlarmSym,
     cond: document.getElementById('alarmCond').value,
     val, note: document.getElementById('alarmNote').value,
     active:true, created:new Date().toISOString(),
+    triggeredAt:null, triggeredPrice:null,
   };
   alarms.push(alarm);
   saveAlarms();
@@ -762,7 +792,11 @@ function saveAlarm() {
   document.getElementById('alarmNote').value='';
   // Notify backend
   fetch(BACKEND+'/alarms',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({id:alarm.id,symbolId:alarm.sid,symbolName:alarm.name,condition:alarm.cond,value:alarm.val,note:alarm.note,active:true})
+    body:JSON.stringify({
+      id:alarm.id, symbolId:alarm.sid, symbolName:alarm.name,
+      condition:alarm.cond, value:alarm.val, note:alarm.note, active:true,
+      telegramToken: tg.token, telegramChatId: tg.chatId,
+    })
   }).catch(()=>{});
 }
 
@@ -771,7 +805,7 @@ function renderAlarmList(id) {
   const el = document.getElementById('alarmList');
   if (!el||!list.length) { if(el)el.innerHTML=''; return; }
   el.innerHTML = `<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
-    <div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:7px">Aktif Alarmlar</div>
+    <div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:7px">Bu Sembol İçin Alarmlar</div>
     ${list.map(a=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)">
       <div>
         <div style="font-size:12px;color:var(--text)">${a.note||a.name}</div>
@@ -795,26 +829,98 @@ function checkAlarms(sid, price) {
   alarms.forEach(a=>{
     if(a.sid!==sid||!a.active)return;
     if((a.cond==='above'&&price>=a.val)||(a.cond==='below'&&price<=a.val)){
-      a.active=false; saveAlarms();
+      a.active=false;
+      a.triggeredAt = new Date().toISOString();
+      a.triggeredPrice = price;
+      saveAlarms();
       toast(`🔔 ALARM: ${a.name} → ${fmt(price)}`, false, 6000, true);
+      renderAllAlarms();
     }
   });
 }
 
-function openAllAlarms() { renderAllAlarms(); document.getElementById('allAlarmsOverlay').classList.add('open'); }
+let alarmTab = 'active';
+function setAlarmTab(tab) {
+  alarmTab = tab;
+  document.getElementById('alarmTabActive').classList.toggle('active', tab==='active');
+  document.getElementById('alarmTabTriggered').classList.toggle('active', tab==='triggered');
+  renderAllAlarms();
+}
+
+function openAllAlarms() { alarmTab='active'; setAlarmTab('active'); document.getElementById('allAlarmsOverlay').classList.add('open'); }
 
 function renderAllAlarms() {
   const el = document.getElementById('allAlarmsList');
   if(!el)return;
-  if(!alarms.length){el.innerHTML='<div style="color:var(--dim);font-size:13px;text-align:center;padding:24px">Henüz alarm yok.</div>';return;}
-  el.innerHTML = alarms.map(a=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
-    <div>
-      <div style="font-size:13px;font-weight:600;color:var(--bright)">${a.name}</div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--dim)">${a.cond==='above'?'Üzerine çıkınca':'Altına düşünce'}: ${a.val}${a.note?' · '+a.note:''}</div>
-      <div style="font-size:10px;color:var(--dim);margin-top:2px">${a.active?'🟢 Aktif':'⚫ Tetiklendi'}</div>
-    </div>
-    <button onclick="delAlarm(${a.id});renderAllAlarms()" style="background:none;border:none;color:var(--dim);cursor:pointer;padding:4px 8px;border-radius:4px">✕</button>
-  </div>`).join('');
+  const list = alarmTab==='active' ? alarms.filter(a=>a.active) : alarms.filter(a=>!a.active);
+
+  if(!list.length){
+    el.innerHTML = `<div style="color:var(--dim);font-size:13px;text-align:center;padding:24px">
+      ${alarmTab==='active' ? 'Aktif alarm yok.' : 'Henüz tetiklenen alarm yok.'}
+    </div>`;
+    return;
+  }
+
+  if (alarmTab==='active') {
+    el.innerHTML = list.map(a=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div>
+        <div style="font-size:13px;font-weight:600;color:var(--bright)">${a.name}</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--dim)">${a.cond==='above'?'Üzerine çıkınca':'Altına düşünce'}: ${a.val}${a.note?' · '+a.note:''}</div>
+        <div style="font-size:10px;color:var(--dim);margin-top:2px">🟢 Aktif · ${fmtDate(a.created)}</div>
+      </div>
+      <button onclick="delAlarm(${a.id});renderAllAlarms()" style="background:none;border:none;color:var(--dim);cursor:pointer;padding:4px 8px;border-radius:4px">✕</button>
+    </div>`).join('');
+  } else {
+    el.innerHTML = list.map(a=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div>
+        <div style="font-size:13px;font-weight:600;color:var(--bright)">${a.name}</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--dim)">Hedef: ${a.cond==='above'?'≥':'≤'} ${a.val}${a.note?' · '+a.note:''}</div>
+        <div style="font-size:11px;color:var(--up);margin-top:2px;font-family:var(--mono)">${a.triggeredPrice?'Tetiklenme fiyatı: '+fmt(a.triggeredPrice):''}</div>
+        <div style="font-size:10px;color:var(--dim);margin-top:2px">⚫ ${a.triggeredAt?fmtDate(a.triggeredAt):'Tetiklendi'}</div>
+      </div>
+      <button onclick="delAlarm(${a.id});renderAllAlarms()" style="background:none;border:none;color:var(--dim);cursor:pointer;padding:4px 8px;border-radius:4px">✕</button>
+    </div>`).join('');
+  }
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleString('tr-TR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+}
+
+// ─── TELEGRAM SETTINGS ──────────────────────────────────────────
+function getTelegramCreds() {
+  return {
+    token: localStorage.getItem('mh_tg_token') || '',
+    chatId: localStorage.getItem('mh_tg_chatid') || '',
+  };
+}
+
+function openTelegramSettings() {
+  const tg = getTelegramCreds();
+  document.getElementById('tgToken').value = tg.token;
+  document.getElementById('tgChatId').value = tg.chatId;
+  document.getElementById('telegramOverlay').classList.add('open');
+}
+
+function saveTelegramSettings() {
+  const token = document.getElementById('tgToken').value.trim();
+  const chatId = document.getElementById('tgChatId').value.trim();
+  localStorage.setItem('mh_tg_token', token);
+  localStorage.setItem('mh_tg_chatid', chatId);
+  toast('✅ Telegram ayarları kaydedildi');
+  document.getElementById('telegramOverlay').classList.remove('open');
+}
+
+function testTelegram() {
+  const token = document.getElementById('tgToken').value.trim();
+  const chatId = document.getElementById('tgChatId').value.trim();
+  if (!token || !chatId) { toast('Token ve Chat ID gir',true); return; }
+  fetch(`${BACKEND}/test-telegram?token=${encodeURIComponent(token)}&chat_id=${encodeURIComponent(chatId)}`, {method:'POST'})
+    .then(r=>r.json())
+    .then(()=>toast('✅ Test mesajı gönderildi, Telegram\\'ı kontrol et'))
+    .catch(()=>toast('Test başarısız',true));
 }
 
 // ─── MANAGE SYMBOLS ───────────────────────────────────────────
