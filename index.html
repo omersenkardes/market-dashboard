@@ -919,7 +919,7 @@ function testTelegram() {
   if (!token || !chatId) { toast('Token ve Chat ID gir',true); return; }
   fetch(`${BACKEND}/test-telegram?token=${encodeURIComponent(token)}&chat_id=${encodeURIComponent(chatId)}`, {method:'POST'})
     .then(r=>r.json())
-    .then(()=>toast('✅ Test mesajı gönderildi, Telegram\\'ı kontrol et'))
+    .then(()=>toast('✅ Test mesajı gönderildi, Telegramı kontrol et'))
     .catch(()=>toast('Test başarısız',true));
 }
 
