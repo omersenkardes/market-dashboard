@@ -136,6 +136,7 @@ main{padding:14px 18px}
   <button class="tab" onclick="setTab('dominance',this)">Dominans</button>
   <button class="tab" onclick="setTab('forex',this)">Forex</button>
   <button class="tab" onclick="setTab('commodity',this)">Emtia & VIX</button>
+  <button class="tab" onclick="setTab('stocks',this)">Hisseler</button>
   <button class="tab" onclick="setTab('other',this)">Diğer</button>
 </div>
 
@@ -290,6 +291,7 @@ const CATS = {
   dominance: {label:'Dominans',    icon:'📊'},
   forex:     {label:'Forex',       icon:'💱'},
   commodity: {label:'Emtia & VIX', icon:'🥇'},
+  stocks:    {label:'Hisseler',    icon:'📈'},
   other:     {label:'Diğer',       icon:'📌'},
 };
 
@@ -326,6 +328,23 @@ let symbols = [
   {id:'VIX',      name:'VIX',        cat:'commodity', src:'yahoo',      yts:'^VIX'},
   {id:'BCOUSD',   name:'BCO/USD',    cat:'commodity', src:'yahoo',      yts:'BZ=F'},
   {id:'TTF',      name:'TTF Gas',    cat:'commodity', src:'yahoo',      yts:'TTF=F'},
+  // BIST Hisseleri
+  {id:'ASELS',    name:'ASELS',      cat:'stocks',    src:'yahoo',      yts:'ASELS.IS'},
+  {id:'KRDMD',    name:'KRDMD',      cat:'stocks',    src:'yahoo',      yts:'KRDMD.IS'},
+  {id:'THYAO',    name:'THYAO',      cat:'stocks',    src:'yahoo',      yts:'THYAO.IS'},
+  {id:'SAHOL',    name:'SAHOL',      cat:'stocks',    src:'yahoo',      yts:'SAHOL.IS'},
+  // ABD Hisseleri & ETF
+  {id:'MSFT',     name:'MSFT',       cat:'stocks',    src:'yahoo',      yts:'MSFT'},
+  {id:'IBM',      name:'IBM',        cat:'stocks',    src:'yahoo',      yts:'IBM'},
+  {id:'SIRI',     name:'SIRI',       cat:'stocks',    src:'yahoo',      yts:'SIRI'},
+  {id:'PSLV',     name:'PSLV',       cat:'stocks',    src:'yahoo',      yts:'PSLV'},
+  {id:'SLV',      name:'SLV',        cat:'stocks',    src:'yahoo',      yts:'SLV'},
+  {id:'EEM',      name:'EEM',        cat:'stocks',    src:'yahoo',      yts:'EEM'},
+  {id:'BABA',     name:'BABA',       cat:'stocks',    src:'yahoo',      yts:'BABA'},
+  {id:'AMAT',     name:'AMAT',       cat:'stocks',    src:'yahoo',      yts:'AMAT'},
+  {id:'ORCL',     name:'ORCL',       cat:'stocks',    src:'yahoo',      yts:'ORCL'},
+  {id:'MOD',      name:'MOD',        cat:'stocks',    src:'yahoo',      yts:'MOD'},
+  {id:'TUR',      name:'TUR ETF',    cat:'stocks',    src:'yahoo',      yts:'TUR'},
 ];
 
 // ─── STATE ────────────────────────────────────────────────────
@@ -515,10 +534,12 @@ async function fetchTwelveData() {
 // ─── YAHOO FINANCE ────────────────────────────────────────────
 async function fetchYahoo() {
   const ySyms = symbols.filter(s => s.src === 'yahoo');
-  for (const s of ySyms) {
-    try {
-      const res = await fetch(`${BACKEND}/prices?symbols=${s.id}`);
-      const data = await res.json();
+  if (!ySyms.length) return;
+  const tickers = ySyms.map(s=>s.id).join(',');
+  try {
+    const res = await fetch(`${BACKEND}/prices?symbols=${encodeURIComponent(tickers)}`);
+    const data = await res.json();
+    ySyms.forEach(s => {
       const d = data[s.id];
       if (!d?.price) return;
       const price = parseFloat(d.price);
@@ -527,8 +548,8 @@ async function fetchYahoo() {
         change:prev?((price-prev)/prev)*100:0, vol:0, updatedAt:Date.now(), source:'Yahoo'};
       updateCard(s.id);
       checkAlarms(s.id, price);
-    } catch(e) { console.warn('Yahoo error:', s.id, e.message); }
-  }
+    });
+  } catch(e) { console.warn('Yahoo error:', e.message); }
 }
 
 // ─── RENDER ───────────────────────────────────────────────────
@@ -721,6 +742,20 @@ async function loadDetailChart(id, tf) {
         candles[id] = cd;
       }
     } catch(e) { console.warn('td chart error',e); }
+  } else if (s.src==='yahoo') {
+    const tfMap={'1m':'1min','5m':'5min','15m':'15min','1h':'1h','2h':'2h','4h':'4h','1D':'1day','1W':'1week','1M':'1month'};
+    try {
+      const res = await fetch(`${BACKEND}/candles?symbol=${encodeURIComponent(s.id)}&interval=${tfMap[tf]||'4h'}&outputsize=150`);
+      const raw = await res.json();
+      if (raw.values?.length) {
+        cd = raw.values.map(v=>({
+          time:Math.floor(new Date(v.datetime).getTime()/1000),
+          open:parseFloat(v.open), high:parseFloat(v.high),
+          low:parseFloat(v.low), close:parseFloat(v.close), volume:parseFloat(v.volume||0),
+        })).sort((a,b)=>a.time-b.time);
+        candles[id] = cd;
+      }
+    } catch(e) { console.warn('yahoo chart error',e); }
   }
 
   // Use cached candles as fallback
@@ -919,7 +954,7 @@ function testTelegram() {
   if (!token || !chatId) { toast('Token ve Chat ID gir',true); return; }
   fetch(`${BACKEND}/test-telegram?token=${encodeURIComponent(token)}&chat_id=${encodeURIComponent(chatId)}`, {method:'POST'})
     .then(r=>r.json())
-    .then(()=>toast('✅ Test mesajı gönderildi, Telegramı kontrol et'))
+    .then(()=>toast('✅ Test mesajı gönderildi, Telegram\\'ı kontrol et'))
     .catch(()=>toast('Test başarısız',true));
 }
 
