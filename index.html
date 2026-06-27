@@ -186,6 +186,16 @@ main{padding:14px 18px}
       <div class="stat"><div class="stat-l">Hacim</div><div class="stat-v" id="sVol">—</div></div>
       <div class="stat"><div class="stat-l">Güncelleme</div><div class="stat-v" id="sAge">—</div></div>
     </div>
+    <div style="padding:14px 18px;border-top:1px solid var(--border)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <span style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em">📝 Notum</span>
+        <span style="font-size:10px;color:var(--dim)" id="noteSavedLabel"></span>
+      </div>
+      <textarea id="symbolNote" placeholder="Bu sembol için kendi notunu yaz... (örn: 50 destek, kırılırsa al)"
+        style="width:100%;min-height:70px;background:var(--bg);border:1px solid var(--border);border-radius:6px;
+        padding:8px 10px;color:var(--text);font-family:inherit;font-size:13px;outline:none;resize:vertical;transition:border-color .15s"
+        oninput="onNoteInput()" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"></textarea>
+    </div>
   </div>
 </div>
 
@@ -630,9 +640,11 @@ function cardHTML(s) {
   const p = prices[s.id]||{};
   const up = (p.change||0)>=0;
   const hasAlarm = alarms.some(a=>a.sid===s.id&&a.active);
+  const noted = hasNote(s.id);
   return `
     <div class="card" id="card-${s.id}" onclick="openDetail('${s.id}')">
       <div class="drag-handle">⠿</div>
+      ${noted?'<div style="position:absolute;top:6px;left:6px;font-size:11px" title="Not var">📝</div>':''}
       <div class="card-hdr">
         <div>
           <div class="sym">${s.name}</div>
@@ -690,7 +702,11 @@ function updateCard(id) {
   const el = (q)=>document.getElementById(q+id);
   if(el('pr-')) el('pr-').textContent = p.price ? fmt(p.price) : '—';
   if(el('ch-')) { el('ch-').textContent = p.price ? fmtC(p.change) : '—'; el('ch-').className='chg '+(up?'up':'dn'); }
-  if(el('src-')) el('src-').textContent = p.source||'—';
+  if(el('src-')) {
+    const ageInfo = ageLabel(p.updatedAt);
+    el('src-').textContent = (p.source||'—') + (ageInfo ? ' · '+ageInfo.text : '');
+    el('src-').style.color = ageInfo?.stale ? 'var(--down)' : '';
+  }
   if(el('vl-')) el('vl-').textContent = p.vol>0?'Vol: '+fmt(p.vol):p.source||'—';
   // Update mini chart last point
   if (miniCharts[id] && p.price) {
@@ -712,6 +728,7 @@ async function openDetail(id) {
   detailId = id;
   document.getElementById('detailOverlay').classList.add('open');
   updateDetailPrices();
+  loadNote(id);
   await loadDetailChart(id, detailTF);
 }
 
@@ -737,8 +754,10 @@ function updateDetailPrices() {
   document.getElementById('sHigh').textContent = fmt(p.high);
   document.getElementById('sLow').textContent  = fmt(p.low);
   document.getElementById('sVol').textContent  = p.vol>0?fmt(p.vol):'—';
-  const age = p.updatedAt?Math.round((Date.now()-p.updatedAt)/1000):null;
-  document.getElementById('sAge').textContent = age!==null?(age<60?age+'s':'~'+Math.floor(age/60)+'dk'):'—';
+  const ageInfo = ageLabel(p.updatedAt);
+  const sAgeEl = document.getElementById('sAge');
+  sAgeEl.textContent = ageInfo ? ageInfo.text : '—';
+  sAgeEl.style.color = ageInfo?.stale ? 'var(--down)' : '';
 }
 
 async function loadDetailChart(id, tf) {
@@ -1112,6 +1131,59 @@ function fmt(n) {
   return n.toFixed(8);
 }
 function fmtC(c){if(c===undefined||isNaN(c))return'—';return(c>=0?'+':'')+c.toFixed(2)+'%';}
+
+function ageLabel(updatedAt) {
+  if (!updatedAt) return null;
+  const secs = Math.round((Date.now()-updatedAt)/1000);
+  const stale = secs >= 3600; // 1 saat
+  let text;
+  if (secs < 60) text = secs+'s önce';
+  else if (secs < 3600) text = Math.floor(secs/60)+'dk önce';
+  else text = '⚠️ '+Math.floor(secs/3600)+'sa önce';
+  return {text, stale};
+}
+
+// ─── NOTES ────────────────────────────────────────────────────
+function getAllNotes() {
+  try { return JSON.parse(localStorage.getItem('mh_notes')||'{}'); }
+  catch(e) { return {}; }
+}
+
+function loadNote(id) {
+  const notes = getAllNotes();
+  const ta = document.getElementById('symbolNote');
+  if (ta) ta.value = notes[id]?.text || '';
+  const lbl = document.getElementById('noteSavedLabel');
+  if (lbl) lbl.textContent = notes[id]?.updatedAt ? 'Son kayıt: '+fmtDate(notes[id].updatedAt) : '';
+}
+
+let noteSaveTimer;
+function onNoteInput() {
+  clearTimeout(noteSaveTimer);
+  const lbl = document.getElementById('noteSavedLabel');
+  if (lbl) lbl.textContent = 'Yazılıyor...';
+  noteSaveTimer = setTimeout(saveNote, 600);
+}
+
+function saveNote() {
+  if (!detailId) return;
+  const ta = document.getElementById('symbolNote');
+  const text = ta ? ta.value : '';
+  const notes = getAllNotes();
+  if (text.trim()) {
+    notes[detailId] = {text, updatedAt: new Date().toISOString()};
+  } else {
+    delete notes[detailId];
+  }
+  localStorage.setItem('mh_notes', JSON.stringify(notes));
+  const lbl = document.getElementById('noteSavedLabel');
+  if (lbl) lbl.textContent = text.trim() ? '✅ Kaydedildi · '+fmtDate(notes[detailId]?.updatedAt) : '';
+}
+
+function hasNote(id) {
+  const notes = getAllNotes();
+  return !!(notes[id]?.text?.trim());
+}
 
 let toastTimer;
 function toast(msg,isErr=false,dur=3500,isWarn=false){
