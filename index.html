@@ -189,12 +189,13 @@ main{padding:14px 18px}
     <div style="padding:14px 18px;border-top:1px solid var(--border)">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
         <span style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em">📝 Notum</span>
-        <span style="font-size:10px;color:var(--dim)" id="noteSavedLabel"></span>
+        <span style="font-size:10px;color:var(--up)" id="noteStatusLabel"></span>
       </div>
       <textarea id="symbolNote" placeholder="Bu sembol için kendi notunu yaz... (örn: 50 destek, kırılırsa al)"
         style="width:100%;min-height:70px;background:var(--bg);border:1px solid var(--border);border-radius:6px;
         padding:8px 10px;color:var(--text);font-family:inherit;font-size:13px;outline:none;resize:vertical;transition:border-color .15s"
         oninput="onNoteInput()" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"></textarea>
+      <div style="text-align:right;margin-top:4px;font-size:10px;color:var(--dim)" id="noteSavedLabel"></div>
     </div>
   </div>
 </div>
@@ -733,9 +734,28 @@ async function openDetail(id) {
 }
 
 function closeDetail() {
+  clearTimeout(noteSaveTimer);
+  saveNote(); // kapatmadan önce bekleyen notu kaydet
+  const closingId = detailId;
   document.getElementById('detailOverlay').classList.remove('open');
   detailId = null;
   if (mChart) { try{mChart.remove();}catch(e){} mChart=null; mSeries=null; mVol=null; }
+  // Kartın not ikonunu güncelle
+  if (closingId) {
+    const card = document.getElementById('card-'+closingId);
+    if (card) {
+      const existing = card.querySelector('[title="Not var"]');
+      if (hasNote(closingId) && !existing) {
+        const badge = document.createElement('div');
+        badge.style.cssText = 'position:absolute;top:6px;left:6px;font-size:11px';
+        badge.title = 'Not var';
+        badge.textContent = '📝';
+        card.appendChild(badge);
+      } else if (!hasNote(closingId) && existing) {
+        existing.remove();
+      }
+    }
+  }
 }
 
 function updateDetailPrices() {
@@ -1153,15 +1173,17 @@ function loadNote(id) {
   const notes = getAllNotes();
   const ta = document.getElementById('symbolNote');
   if (ta) ta.value = notes[id]?.text || '';
-  const lbl = document.getElementById('noteSavedLabel');
-  if (lbl) lbl.textContent = notes[id]?.updatedAt ? 'Son kayıt: '+fmtDate(notes[id].updatedAt) : '';
+  const statusLbl = document.getElementById('noteStatusLabel');
+  if (statusLbl) statusLbl.textContent = '';
+  const savedLbl = document.getElementById('noteSavedLabel');
+  if (savedLbl) savedLbl.textContent = notes[id]?.updatedAt ? 'Son kayıt: '+fmtDate(notes[id].updatedAt) : '';
 }
 
 let noteSaveTimer;
 function onNoteInput() {
   clearTimeout(noteSaveTimer);
-  const lbl = document.getElementById('noteSavedLabel');
-  if (lbl) lbl.textContent = 'Yazılıyor...';
+  const statusLbl = document.getElementById('noteStatusLabel');
+  if (statusLbl) statusLbl.textContent = 'Yazılıyor...';
   noteSaveTimer = setTimeout(saveNote, 600);
 }
 
@@ -1176,8 +1198,10 @@ function saveNote() {
     delete notes[detailId];
   }
   localStorage.setItem('mh_notes', JSON.stringify(notes));
-  const lbl = document.getElementById('noteSavedLabel');
-  if (lbl) lbl.textContent = text.trim() ? '✅ Kaydedildi · '+fmtDate(notes[detailId]?.updatedAt) : '';
+  const statusLbl = document.getElementById('noteStatusLabel');
+  if (statusLbl) statusLbl.textContent = text.trim() ? '✅ Kaydedildi' : '';
+  const savedLbl = document.getElementById('noteSavedLabel');
+  if (savedLbl) savedLbl.textContent = text.trim() ? 'Son kayıt: '+fmtDate(notes[detailId]?.updatedAt) : '';
 }
 
 function hasNote(id) {
