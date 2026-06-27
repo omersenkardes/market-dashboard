@@ -13,8 +13,13 @@
   --text:#e2e8f0; --dim:#64748b; --bright:#f8fafc;
   --mono:'SF Mono','Fira Code',monospace;
 }
+:root.light {
+  --bg:#f8fafc; --surface:#ffffff; --surface2:#f1f5f9;
+  --border:#e2e8f0; --accent:#3b82f6; --up:#10b981; --down:#ef4444;
+  --text:#1e293b; --dim:#64748b; --bright:#0f172a;
+}
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;min-height:100vh}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;min-height:100vh;transition:background .2s,color .2s}
 header{display:flex;align-items:center;justify-content:space-between;padding:10px 18px;
   background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;gap:12px;flex-wrap:wrap}
 .logo{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent);letter-spacing:.08em}
@@ -123,6 +128,7 @@ main{padding:14px 18px}
     <span class="status" id="status">Bağlanıyor...</span>
   </div>
   <div class="hdr-r">
+    <button class="btn" id="themeBtn" onclick="toggleTheme()">🌙 Karanlık</button>
     <button class="btn" id="dragBtn" onclick="toggleDrag()">✥ Düzenle</button>
     <button class="btn" onclick="openTelegramSettings()">⚙️ Telegram</button>
     <button class="btn" onclick="openAllAlarms()">🔔 Alarmlar</button>
@@ -261,6 +267,7 @@ main{padding:14px 18px}
         <option value="dominance">Dominans</option>
         <option value="forex">Forex</option>
         <option value="commodity">Emtia & VIX</option>
+        <option value="stocks">Hisseler</option>
         <option value="other">Diğer</option>
       </select>
       <label class="fm-lbl">Veri Kaynağı</label>
@@ -328,6 +335,7 @@ let symbols = [
   {id:'VIX',      name:'VIX',        cat:'commodity', src:'yahoo',      yts:'^VIX'},
   {id:'BCOUSD',   name:'BCO/USD',    cat:'commodity', src:'yahoo',      yts:'BZ=F'},
   {id:'TTF',      name:'TTF Gas',    cat:'commodity', src:'yahoo',      yts:'TTF=F'},
+  {id:'HENRYHUB', name:'Henry Hub',  cat:'commodity', src:'yahoo',      yts:'NG=F'},
   // BIST Hisseleri
   {id:'ASELS',    name:'ASELS',      cat:'stocks',    src:'yahoo',      yts:'ASELS.IS'},
   {id:'KRDMD',    name:'KRDMD',      cat:'stocks',    src:'yahoo',      yts:'KRDMD.IS'},
@@ -364,6 +372,8 @@ let mVol      = null;
 
 // ─── INIT ─────────────────────────────────────────────────────
 window.addEventListener('load', async () => {
+  applyTheme();
+
   setInterval(() => {
     document.getElementById('clock').textContent =
       new Date().toLocaleTimeString('tr-TR', {hour12:false});
@@ -491,8 +501,33 @@ async function fetchCoinGecko() {
 // ─── FOREX ────────────────────────────────────────────────────
 async function fetchForex() {
   const fxSyms = symbols.filter(s => s.src === 'frankfurter');
+  if (!fxSyms.length) return;
+
+  // 1) Finnhub gerçek zamanlı dene
+  let finnhubOk = new Set();
+  try {
+    const tickers = fxSyms.map(s=>s.id).join(',');
+    const res = await fetch(`${BACKEND}/prices?symbols=${encodeURIComponent(tickers)}`);
+    const data = await res.json();
+    fxSyms.forEach(s => {
+      const d = data[s.id];
+      if (!d?.price) return;
+      finnhubOk.add(s.id);
+      const rate = parseFloat(d.price);
+      const prev = prices[s.id]?.price || rate;
+      prices[s.id] = {price:rate, open:prev, high:Math.max(prev,rate), low:Math.min(prev,rate),
+        change:prev?((rate-prev)/prev)*100:0, vol:0, updatedAt:Date.now(), source:'Finnhub'};
+      updateCard(s.id);
+      checkAlarms(s.id, rate);
+    });
+  } catch(e) { console.warn('Finnhub forex error:', e.message); }
+
+  // 2) Finnhub'dan gelmeyenler için Frankfurter fallback
+  const remaining = fxSyms.filter(s => !finnhubOk.has(s.id));
+  if (!remaining.length) return;
+
   const byBase = {};
-  fxSyms.forEach(s => { (byBase[s.fxb]=byBase[s.fxb]||[]).push(s); });
+  remaining.forEach(s => { (byBase[s.fxb]=byBase[s.fxb]||[]).push(s); });
   for (const [base, syms2] of Object.entries(byBase)) {
     try {
       const quotes = syms2.map(s=>s.fxq).join(',');
@@ -922,6 +957,22 @@ function fmtDate(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
   return d.toLocaleString('tr-TR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+}
+
+// ─── THEME ────────────────────────────────────────────────────
+function applyTheme() {
+  const saved = localStorage.getItem('mh_theme') || 'dark';
+  document.documentElement.classList.toggle('light', saved === 'light');
+  const btn = document.getElementById('themeBtn');
+  if (btn) btn.textContent = saved === 'light' ? '☀️ Aydınlık' : '🌙 Karanlık';
+}
+
+function toggleTheme() {
+  const current = localStorage.getItem('mh_theme') || 'dark';
+  const next = current === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('mh_theme', next);
+  applyTheme();
+  // Mini grafiklerin arka planı transparan olduğu için yeniden çizmeye gerek yok
 }
 
 // ─── TELEGRAM SETTINGS ──────────────────────────────────────────
