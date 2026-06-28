@@ -87,6 +87,9 @@ main{padding:14px 18px}
 .tf{padding:4px 10px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid transparent;color:var(--dim);background:transparent;font-family:var(--mono);transition:all .15s}
 .tf:hover{color:var(--text);border-color:var(--border)}
 .tf.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+#maBtn7.active{background:#f59e0b;border-color:#f59e0b;color:#fff}
+#maBtn21.active{background:#3b82f6;border-color:#3b82f6;color:#fff}
+#maBtn200.active{background:#a855f7;border-color:#a855f7;color:#fff}
 .modal-chart{flex:1;min-height:300px;padding:4px}
 .stats{display:flex;border-top:1px solid var(--border)}
 .stat{flex:1;padding:9px 12px;border-right:1px solid var(--border);text-align:center}
@@ -178,6 +181,12 @@ main{padding:14px 18px}
       <button class="tf" data-tf="1D"  onclick="changeTF(this)">1G</button>
       <button class="tf" data-tf="1W"  onclick="changeTF(this)">1H</button>
       <button class="tf" data-tf="1M"  onclick="changeTF(this)">1A</button>
+    </div>
+    <div class="tfs" style="border-top:none">
+      <span style="font-size:10px;color:var(--dim);align-self:center;margin-right:4px">MA:</span>
+      <button class="tf" id="maBtn7"   onclick="toggleMA(7,this)"   style="color:#f59e0b">7</button>
+      <button class="tf" id="maBtn21"  onclick="toggleMA(21,this)"  style="color:#3b82f6">21</button>
+      <button class="tf" id="maBtn200" onclick="toggleMA(200,this)" style="color:#a855f7">200</button>
     </div>
     <div class="modal-chart" id="mChart"></div>
     <div class="stats">
@@ -421,6 +430,8 @@ let detailTF  = '4h';
 let mChart    = null;
 let mSeries   = null;
 let mVol      = null;
+let mMASeries = {};            // {7: series, 21: series, 200: series}
+let activeMAs = new Set();     // hangi MA'lar açık
 
 // ─── INIT ─────────────────────────────────────────────────────
 window.addEventListener('load', async () => {
@@ -771,6 +782,10 @@ async function openDetail(id) {
   document.getElementById('detailOverlay').classList.add('open');
   updateDetailPrices();
   loadNote(id);
+  [7,21,200].forEach(p => {
+    const btn = document.getElementById('maBtn'+p);
+    if (btn) btn.classList.toggle('active', activeMAs.has(p));
+  });
   await loadDetailChart(id, detailTF);
 }
 
@@ -897,7 +912,52 @@ async function loadDetailChart(id, tf) {
   mChart.priceScale('vol').applyOptions({scaleMargins:{top:0.85,bottom:0}});
   if (cd.length) mVol.setData(cd.map(c=>({time:c.time,value:c.volume||0,color:c.close>=c.open?'#10b98130':'#ef444430'})));
 
+  // Hareketli ortalama serilerini oluştur ve aktif olanları çiz
+  mMASeries = {};
+  const maColors = {7:'#f59e0b', 21:'#3b82f6', 200:'#a855f7'};
+  [7,21,200].forEach(period => {
+    const series = mChart.addLineSeries({
+      color: maColors[period], lineWidth:1.5, priceLineVisible:false, lastValueVisible:false,
+      visible: activeMAs.has(period),
+    });
+    mMASeries[period] = series;
+    if (activeMAs.has(period) && cd.length >= period) {
+      series.setData(calculateMA(cd, period));
+    }
+  });
+
   setTimeout(()=>{if(mChart)mChart.applyOptions({width:wrap.clientWidth});},60);
+}
+
+function calculateMA(candleArr, period) {
+  const result = [];
+  for (let i = period-1; i < candleArr.length; i++) {
+    let sum = 0;
+    for (let j = i-period+1; j <= i; j++) sum += candleArr[j].close;
+    result.push({time: candleArr[i].time, value: sum/period});
+  }
+  return result;
+}
+
+function toggleMA(period, btn) {
+  if (activeMAs.has(period)) {
+    activeMAs.delete(period);
+    btn.classList.remove('active');
+  } else {
+    activeMAs.add(period);
+    btn.classList.add('active');
+  }
+  // Mevcut grafikteki seriyi güncelle (yeniden çekmeden)
+  if (mMASeries[period] && detailId) {
+    const cd = candles[detailId] || [];
+    if (activeMAs.has(period)) {
+      mMASeries[period].applyOptions({visible:true});
+      if (cd.length >= period) mMASeries[period].setData(calculateMA(cd, period));
+      else toast(`${period} barlık ortalama için yeterli veri yok`, true);
+    } else {
+      mMASeries[period].applyOptions({visible:false});
+    }
+  }
 }
 
 async function changeTF(btn) {
