@@ -90,6 +90,7 @@ main{padding:14px 18px}
 #maBtn7.active{background:#f59e0b;border-color:#f59e0b;color:#fff}
 #maBtn21.active{background:#3b82f6;border-color:#3b82f6;color:#fff}
 #maBtn200.active{background:#a855f7;border-color:#a855f7;color:#fff}
+#rsiBtn.active{background:#06b6d4;border-color:#06b6d4;color:#fff}
 .modal-chart{flex:1;min-height:300px;padding:4px}
 .stats{display:flex;border-top:1px solid var(--border)}
 .stat{flex:1;padding:9px 12px;border-right:1px solid var(--border);text-align:center}
@@ -187,27 +188,32 @@ main{padding:14px 18px}
       <button class="tf" id="maBtn7"   onclick="toggleMA(7,this)"   style="color:#f59e0b">7</button>
       <button class="tf" id="maBtn21"  onclick="toggleMA(21,this)"  style="color:#3b82f6">21</button>
       <button class="tf" id="maBtn200" onclick="toggleMA(200,this)" style="color:#a855f7">200</button>
+      <span style="font-size:10px;color:var(--dim);align-self:center;margin:0 4px 0 10px">RSI:</span>
+      <button class="tf" id="rsiBtn" onclick="toggleRSI(this)" style="color:#06b6d4">14</button>
     </div>
-    <div class="modal-chart" id="mChart"></div>
-    <div class="stats">
-      <div class="stat"><div class="stat-l">Açılış</div><div class="stat-v" id="sOpen">—</div></div>
-      <div class="stat"><div class="stat-l">Yüksek</div><div class="stat-v" id="sHigh">—</div></div>
-      <div class="stat"><div class="stat-l">Düşük</div><div class="stat-v" id="sLow">—</div></div>
-      <div class="stat"><div class="stat-l">Hacim</div><div class="stat-v" id="sVol">—</div></div>
-      <div class="stat"><div class="stat-l">Güncelleme</div><div class="stat-v" id="sAge">—</div></div>
-    </div>
-    <div style="padding:14px 18px;border-top:1px solid var(--border)">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <span style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em">📝 Notum</span>
-        <span style="font-size:10px;color:var(--up)" id="noteStatusLabel"></span>
+    <div style="overflow-y:auto;flex:1">
+      <div class="modal-chart" id="mChart"></div>
+      <div class="modal-chart" id="rsiChartWrap" style="display:none;height:120px;border-top:1px solid var(--border)"></div>
+      <div class="stats">
+        <div class="stat"><div class="stat-l">Açılış</div><div class="stat-v" id="sOpen">—</div></div>
+        <div class="stat"><div class="stat-l">Yüksek</div><div class="stat-v" id="sHigh">—</div></div>
+        <div class="stat"><div class="stat-l">Düşük</div><div class="stat-v" id="sLow">—</div></div>
+        <div class="stat"><div class="stat-l">Hacim</div><div class="stat-v" id="sVol">—</div></div>
+        <div class="stat"><div class="stat-l">Güncelleme</div><div class="stat-v" id="sAge">—</div></div>
       </div>
-      <textarea id="symbolNote" placeholder="Bu sembol için kendi notunu yaz... (örn: 50 destek, kırılırsa al)"
-        style="width:100%;min-height:70px;background:var(--bg);border:1px solid var(--border);border-radius:6px;
-        padding:8px 10px;color:var(--text);font-family:inherit;font-size:13px;outline:none;resize:vertical;transition:border-color .15s"
-        oninput="onNoteInput()" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"></textarea>
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px">
-        <button onclick="openNoteHistory()" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:10px;padding:0">📜 Geçmiş</button>
-        <div style="font-size:10px;color:var(--dim)" id="noteSavedLabel"></div>
+      <div style="padding:14px 18px;border-top:1px solid var(--border)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <span style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em">📝 Notum</span>
+          <span style="font-size:10px;color:var(--up)" id="noteStatusLabel"></span>
+        </div>
+        <textarea id="symbolNote" placeholder="Bu sembol için kendi notunu yaz... (örn: 50 destek, kırılırsa al)"
+          style="width:100%;min-height:70px;background:var(--bg);border:1px solid var(--border);border-radius:6px;
+          padding:8px 10px;color:var(--text);font-family:inherit;font-size:13px;outline:none;resize:vertical;transition:border-color .15s"
+          oninput="onNoteInput()" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"></textarea>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px">
+          <button onclick="openNoteHistory()" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:10px;padding:0">📜 Geçmiş</button>
+          <div style="font-size:10px;color:var(--dim)" id="noteSavedLabel"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -432,6 +438,9 @@ let mSeries   = null;
 let mVol      = null;
 let mMASeries = {};            // {7: series, 21: series, 200: series}
 let activeMAs = new Set();     // hangi MA'lar açık
+let rsiActive = false;
+let rsiChart = null;
+let rsiSeries = null;
 
 // ─── INIT ─────────────────────────────────────────────────────
 window.addEventListener('load', async () => {
@@ -786,6 +795,9 @@ async function openDetail(id) {
     const btn = document.getElementById('maBtn'+p);
     if (btn) btn.classList.toggle('active', activeMAs.has(p));
   });
+  const rsiBtn = document.getElementById('rsiBtn');
+  if (rsiBtn) rsiBtn.classList.toggle('active', rsiActive);
+  document.getElementById('rsiChartWrap').style.display = rsiActive ? 'block' : 'none';
   await loadDetailChart(id, detailTF);
 }
 
@@ -796,6 +808,7 @@ function closeDetail() {
   document.getElementById('detailOverlay').classList.remove('open');
   detailId = null;
   if (mChart) { try{mChart.remove();}catch(e){} mChart=null; mSeries=null; mVol=null; }
+  if (rsiChart) { try{rsiChart.remove();}catch(e){} rsiChart=null; rsiSeries=null; }
   // Kartın not ikonunu güncelle
   if (closingId) {
     const card = document.getElementById('card-'+closingId);
@@ -927,6 +940,12 @@ async function loadDetailChart(id, tf) {
   });
 
   setTimeout(()=>{if(mChart)mChart.applyOptions({width:wrap.clientWidth});},60);
+
+  // RSI aktifse, yeni veriyle yeniden çiz
+  if (rsiActive) {
+    if (rsiChart) { try{rsiChart.remove();}catch(e){} rsiChart=null; rsiSeries=null; }
+    buildRSIChart();
+  }
 }
 
 function calculateMA(candleArr, period) {
@@ -957,6 +976,80 @@ function toggleMA(period, btn) {
     } else {
       mMASeries[period].applyOptions({visible:false});
     }
+  }
+}
+
+// ─── RSI ──────────────────────────────────────────────────────
+function calculateRSI(candleArr, period=14) {
+  if (candleArr.length < period+1) return [];
+  const result = [];
+  let gains = 0, losses = 0;
+
+  // İlk ortalama kazanç/kayıp
+  for (let i=1; i<=period; i++) {
+    const diff = candleArr[i].close - candleArr[i-1].close;
+    if (diff >= 0) gains += diff; else losses -= diff;
+  }
+  let avgGain = gains/period, avgLoss = losses/period;
+  result.push({time: candleArr[period].time, value: avgLoss===0?100:100-(100/(1+avgGain/avgLoss))});
+
+  // Wilder'ın düzeltmesi (smoothing)
+  for (let i=period+1; i<candleArr.length; i++) {
+    const diff = candleArr[i].close - candleArr[i-1].close;
+    const gain = diff>0?diff:0, loss = diff<0?-diff:0;
+    avgGain = (avgGain*(period-1)+gain)/period;
+    avgLoss = (avgLoss*(period-1)+loss)/period;
+    result.push({time: candleArr[i].time, value: avgLoss===0?100:100-(100/(1+avgGain/avgLoss))});
+  }
+  return result;
+}
+
+function buildRSIChart() {
+  const wrap = document.getElementById('rsiChartWrap');
+  wrap.innerHTML = '';
+  rsiChart = LightweightCharts.createChart(wrap, {
+    width: wrap.clientWidth||840, height:120,
+    layout:{background:{type:'solid',color:'transparent'},textColor:'#64748b'},
+    grid:{vertLines:{color:'#1e2d45'},horzLines:{color:'#1e2d45'}},
+    rightPriceScale:{borderColor:'#1e2d45', scaleMargins:{top:0.1,bottom:0.1}},
+    timeScale:{borderColor:'#1e2d45', timeVisible:true, secondsVisible:false},
+    handleScroll:true, handleScale:true,
+  });
+  rsiSeries = rsiChart.addLineSeries({color:'#06b6d4', lineWidth:1.5, priceLineVisible:false});
+
+  // 30/70 referans çizgileri
+  const overbought = rsiChart.addLineSeries({color:'#ef444460', lineWidth:1, priceLineVisible:false, lastValueVisible:false});
+  const oversold   = rsiChart.addLineSeries({color:'#10b98160', lineWidth:1, priceLineVisible:false, lastValueVisible:false});
+
+  const cd = candles[detailId] || [];
+  if (cd.length > 14) {
+    const rsiData = calculateRSI(cd, 14);
+    rsiSeries.setData(rsiData);
+    if (rsiData.length) {
+      overbought.setData([{time:rsiData[0].time,value:70},{time:rsiData[rsiData.length-1].time,value:70}]);
+      oversold.setData([{time:rsiData[0].time,value:30},{time:rsiData[rsiData.length-1].time,value:30}]);
+    }
+    rsiChart.timeScale().fitContent();
+  } else {
+    toast('RSI için yeterli veri yok (en az 15 bar gerekli)', true);
+  }
+
+  // Ana grafik ile zaman eksenini senkronize et
+  mChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+    if (rsiChart && range) rsiChart.timeScale().setVisibleLogicalRange(range);
+  });
+}
+
+function toggleRSI(btn) {
+  rsiActive = !rsiActive;
+  btn.classList.toggle('active', rsiActive);
+  const wrap = document.getElementById('rsiChartWrap');
+  if (rsiActive) {
+    wrap.style.display = 'block';
+    if (mChart) buildRSIChart();
+  } else {
+    wrap.style.display = 'none';
+    if (rsiChart) { try{rsiChart.remove();}catch(e){} rsiChart=null; rsiSeries=null; }
   }
 }
 
