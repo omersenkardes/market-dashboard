@@ -131,6 +131,7 @@ main{padding:14px 18px}
     <button class="btn" id="themeBtn" onclick="toggleTheme()">🌙 Karanlık</button>
     <button class="btn" id="dragBtn" onclick="toggleDrag()">✥ Düzenle</button>
     <button class="btn" onclick="openTelegramSettings()">⚙️ Telegram</button>
+    <button class="btn" onclick="openCorrelation()">📊 Korelasyon</button>
     <button class="btn" onclick="openAllAlarms()">🔔 Alarmlar</button>
     <button class="btn primary" onclick="openPanel()">+ Sembol Ekle</button>
   </div>
@@ -195,7 +196,10 @@ main{padding:14px 18px}
         style="width:100%;min-height:70px;background:var(--bg);border:1px solid var(--border);border-radius:6px;
         padding:8px 10px;color:var(--text);font-family:inherit;font-size:13px;outline:none;resize:vertical;transition:border-color .15s"
         oninput="onNoteInput()" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"></textarea>
-      <div style="text-align:right;margin-top:4px;font-size:10px;color:var(--dim)" id="noteSavedLabel"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px">
+        <button onclick="openNoteHistory()" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:10px;padding:0">📜 Geçmiş</button>
+        <div style="font-size:10px;color:var(--dim)" id="noteSavedLabel"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -234,6 +238,43 @@ main{padding:14px 18px}
       <button class="tab" id="alarmTabTriggered" onclick="setAlarmTab('triggered')" style="border-radius:6px">⚫ Gerçekleşen</button>
     </div>
     <div id="allAlarmsList"></div>
+  </div>
+</div>
+
+<!-- Note History -->
+<div class="overlay" id="noteHistoryOverlay" onclick="event.target===this&&this.classList.remove('open')">
+  <div class="alarm-modal" onclick="event.stopPropagation()" style="max-width:520px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div style="font-size:15px;font-weight:700;color:var(--bright)" id="noteHistoryTitle">📜 Not Geçmişi</div>
+      <button class="xbtn" onclick="document.getElementById('noteHistoryOverlay').classList.remove('open')">✕</button>
+    </div>
+    <div id="noteHistoryList" style="max-height:60vh;overflow-y:auto"></div>
+  </div>
+</div>
+
+<!-- Correlation -->
+<div class="overlay" id="correlationOverlay" onclick="event.target===this&&this.classList.remove('open')">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:760px">
+    <div class="modal-hdr">
+      <div style="font-size:15px;font-weight:700;color:var(--bright)">📊 Korelasyon Analizi</div>
+      <button class="xbtn" onclick="document.getElementById('correlationOverlay').classList.remove('open')">✕</button>
+    </div>
+    <div style="padding:14px 18px;border-bottom:1px solid var(--border)">
+      <div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Sembol Seç (2-5 adet)</div>
+      <div id="corrSymbolPicker" style="display:flex;flex-wrap:wrap;gap:6px;max-height:140px;overflow-y:auto;margin-bottom:12px"></div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:11px;color:var(--dim)">Zaman Aralığı:</span>
+        <div style="display:flex;gap:4px">
+          <button class="tf active" data-days="7" onclick="setCorrDays(7,this)">7 Gün</button>
+          <button class="tf" data-days="30" onclick="setCorrDays(30,this)">30 Gün</button>
+          <button class="tf" data-days="90" onclick="setCorrDays(90,this)">90 Gün</button>
+        </div>
+        <button class="btn primary" style="margin-left:auto" onclick="runCorrelation()">Hesapla</button>
+      </div>
+    </div>
+    <div id="corrResults" style="padding:14px 18px">
+      <div style="color:var(--dim);font-size:13px;text-align:center;padding:30px">2-5 sembol seçip "Hesapla"ya bas.</div>
+    </div>
   </div>
 </div>
 
@@ -860,7 +901,7 @@ async function loadDetailChart(id, tf) {
 }
 
 async function changeTF(btn) {
-  document.querySelectorAll('.tf').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.tfs .tf').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   detailTF = btn.dataset.tf;
   if (detailId) await loadDetailChart(detailId, detailTF);
@@ -1192,9 +1233,24 @@ function saveNote() {
   const ta = document.getElementById('symbolNote');
   const text = ta ? ta.value : '';
   const notes = getAllNotes();
+  const prevEntry = notes[detailId];
+
+  // Önceki versiyonu geçmişe kaydet (gerçekten değiştiyse)
+  if (prevEntry?.text?.trim() && prevEntry.text !== text) {
+    const history = getNoteHistory(detailId);
+    history.unshift({text: prevEntry.text, savedAt: prevEntry.updatedAt});
+    saveNoteHistory(detailId, history.slice(0, 50)); // en fazla 50 eski versiyon
+  }
+
   if (text.trim()) {
     notes[detailId] = {text, updatedAt: new Date().toISOString()};
   } else {
+    // Not tamamen silindiyse, son haliyle geçmişe ekle
+    if (prevEntry?.text?.trim()) {
+      const history = getNoteHistory(detailId);
+      history.unshift({text: prevEntry.text, savedAt: prevEntry.updatedAt, deleted: true});
+      saveNoteHistory(detailId, history.slice(0, 50));
+    }
     delete notes[detailId];
   }
   localStorage.setItem('mh_notes', JSON.stringify(notes));
@@ -1207,6 +1263,194 @@ function saveNote() {
 function hasNote(id) {
   const notes = getAllNotes();
   return !!(notes[id]?.text?.trim());
+}
+
+// ─── NOTE HISTORY ─────────────────────────────────────────────
+function getAllNoteHistory() {
+  try { return JSON.parse(localStorage.getItem('mh_notes_history')||'{}'); }
+  catch(e) { return {}; }
+}
+
+function getNoteHistory(id) {
+  const all = getAllNoteHistory();
+  return all[id] || [];
+}
+
+function saveNoteHistory(id, history) {
+  const all = getAllNoteHistory();
+  all[id] = history;
+  localStorage.setItem('mh_notes_history', JSON.stringify(all));
+}
+
+function openNoteHistory() {
+  if (!detailId) return;
+  const s = symbols.find(x=>x.id===detailId);
+  const history = getNoteHistory(detailId);
+  const el = document.getElementById('noteHistoryList');
+  document.getElementById('noteHistoryTitle').textContent = '📜 '+(s?.name||detailId)+' Not Geçmişi';
+  if (!history.length) {
+    el.innerHTML = '<div style="color:var(--dim);font-size:13px;text-align:center;padding:24px">Henüz eski not yok.</div>';
+  } else {
+    el.innerHTML = history.map(h => `
+      <div style="padding:10px 0;border-bottom:1px solid var(--border)">
+        <div style="font-size:13px;color:var(--text);white-space:pre-wrap;margin-bottom:4px">${escapeHtml(h.text)}</div>
+        <div style="font-size:10px;color:var(--dim)">${h.deleted?'🗑️ Silindi':'✏️ Üzerine yazıldı'} · ${fmtDate(h.savedAt)}</div>
+      </div>
+    `).join('');
+  }
+  document.getElementById('noteHistoryOverlay').classList.add('open');
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ─── CORRELATION ──────────────────────────────────────────────
+let corrSelected = new Set();
+let corrDays = 7;
+
+function openCorrelation() {
+  const picker = document.getElementById('corrSymbolPicker');
+  picker.innerHTML = symbols.map(s => `
+    <label style="display:flex;align-items:center;gap:5px;padding:4px 9px;border-radius:6px;
+      border:1px solid var(--border);background:${corrSelected.has(s.id)?'var(--accent)':'var(--bg)'};
+      color:${corrSelected.has(s.id)?'#fff':'var(--text)'};cursor:pointer;font-size:12px;font-family:var(--mono)">
+      <input type="checkbox" style="display:none" ${corrSelected.has(s.id)?'checked':''}
+        onchange="toggleCorrSymbol('${s.id}')">
+      ${s.name}
+    </label>
+  `).join('');
+  document.getElementById('correlationOverlay').classList.add('open');
+}
+
+function toggleCorrSymbol(id) {
+  if (corrSelected.has(id)) {
+    corrSelected.delete(id);
+  } else {
+    if (corrSelected.size >= 5) { toast('En fazla 5 sembol seçebilirsin', true); return; }
+    corrSelected.add(id);
+  }
+  openCorrelation(); // re-render picker with updated highlight
+}
+
+function setCorrDays(days, btn) {
+  corrDays = days;
+  document.querySelectorAll('#correlationOverlay .tf').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+async function fetchHistoricalCloses(s, days) {
+  // interval seçimi: kısa aralıkta saatlik, uzun aralıkta günlük
+  const interval = days <= 7 ? '4h' : '1D';
+  const limit = days <= 7 ? Math.ceil(days*6) : days;
+
+  if (s.src === 'binance') {
+    try {
+      const res = await fetch(`${BACKEND}/binance/candles?symbol=${s.bt}&interval=${interval}&limit=${limit}`);
+      const raw = await res.json();
+      if (!raw.candles?.length) return [];
+      let cs = raw.candles.map(k=>({time:parseInt(k.time), close:parseFloat(k.close)}));
+      if (s.inv) cs = cs.map(c=>({time:c.time, close: 1/c.close}));
+      return cs;
+    } catch(e) { return []; }
+  }
+
+  if (s.src === 'twelvedata' || s.src === 'yahoo') {
+    const tdInterval = days<=7 ? '4h' : '1day';
+    const sym = s.src==='twelvedata' ? s.tds : s.id;
+    try {
+      const res = await fetch(`${BACKEND}/candles?symbol=${encodeURIComponent(sym)}&interval=${tdInterval}&outputsize=${limit}`);
+      const raw = await res.json();
+      if (!raw.values?.length) return [];
+      return raw.values.map(v=>({
+        time: Math.floor(new Date(v.datetime).getTime()/1000),
+        close: parseFloat(v.close),
+      })).sort((a,b)=>a.time-b.time);
+    } catch(e) { return []; }
+  }
+
+  // Forex/dominans: şu anki tek nokta dışında geçmiş yok, atla
+  return [];
+}
+
+function pearsonCorrelation(a, b) {
+  const n = Math.min(a.length, b.length);
+  if (n < 2) return null;
+  const xa = a.slice(-n), xb = b.slice(-n);
+  const meanA = xa.reduce((s,v)=>s+v,0)/n;
+  const meanB = xb.reduce((s,v)=>s+v,0)/n;
+  let num=0, denA=0, denB=0;
+  for (let i=0;i<n;i++) {
+    const da = xa[i]-meanA, db = xb[i]-meanB;
+    num += da*db; denA += da*da; denB += db*db;
+  }
+  if (denA===0||denB===0) return null;
+  return num/Math.sqrt(denA*denB);
+}
+
+async function runCorrelation() {
+  if (corrSelected.size < 2) { toast('En az 2 sembol seç', true); return; }
+  const resultsEl = document.getElementById('corrResults');
+  resultsEl.innerHTML = '<div style="color:var(--dim);font-size:13px;text-align:center;padding:30px">Veriler yükleniyor...</div>';
+
+  const selSyms = symbols.filter(s => corrSelected.has(s.id));
+  const dataSets = {};
+  for (const s of selSyms) {
+    const closes = await fetchHistoricalCloses(s, corrDays);
+    if (closes.length < 3) {
+      resultsEl.innerHTML = `<div style="color:var(--down);font-size:13px;text-align:center;padding:30px">⚠️ ${s.name} için yeterli geçmiş veri yok (forex/dominans sembolleri henüz desteklenmiyor).</div>`;
+      return;
+    }
+    dataSets[s.id] = closes;
+  }
+
+  // Normalize: ilk değere göre % değişim
+  const normalized = {};
+  Object.entries(dataSets).forEach(([id, closes]) => {
+    const base = closes[0].close;
+    normalized[id] = closes.map(c => ({time:c.time, value: ((c.close-base)/base)*100}));
+  });
+
+  // Korelasyon matrisi (kapanış fiyatları üzerinden)
+  const closesOnly = {};
+  Object.entries(dataSets).forEach(([id, closes]) => { closesOnly[id] = closes.map(c=>c.close); });
+
+  let matrixHtml = `<table style="width:100%;border-collapse:collapse;font-size:11px;font-family:var(--mono);margin-bottom:16px">
+    <tr><td></td>${selSyms.map(s=>`<td style="padding:4px 8px;color:var(--dim);text-align:center">${s.name}</td>`).join('')}</tr>`;
+  selSyms.forEach(s1 => {
+    matrixHtml += `<tr><td style="padding:4px 8px;color:var(--dim)">${s1.name}</td>`;
+    selSyms.forEach(s2 => {
+      const r = s1.id===s2.id ? 1 : pearsonCorrelation(closesOnly[s1.id], closesOnly[s2.id]);
+      const color = r===null ? 'var(--dim)' : r>0.5 ? 'var(--up)' : r<-0.5 ? 'var(--down)' : 'var(--text)';
+      matrixHtml += `<td style="padding:4px 8px;text-align:center;color:${color};font-weight:${Math.abs(r||0)>0.5?'700':'400'}">${r===null?'—':r.toFixed(2)}</td>`;
+    });
+    matrixHtml += '</tr>';
+  });
+  matrixHtml += '</table>';
+
+  resultsEl.innerHTML = `
+    <div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Korelasyon Matrisi (-1 ile +1 arası)</div>
+    ${matrixHtml}
+    <div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Normalize Edilmiş Karşılaştırma (%)</div>
+    <div id="corrChartWrap" style="height:280px"></div>
+  `;
+
+  // Çizgi grafik
+  const chart = LightweightCharts.createChart(document.getElementById('corrChartWrap'), {
+    width: document.getElementById('corrChartWrap').clientWidth, height:280,
+    layout:{background:{type:'solid',color:'transparent'},textColor:'#64748b'},
+    grid:{vertLines:{color:'#1e2d45'},horzLines:{color:'#1e2d45'}},
+    rightPriceScale:{borderColor:'#1e2d45'},
+    timeScale:{borderColor:'#1e2d45',timeVisible:true},
+  });
+  const palette = ['#3b82f6','#10b981','#f59e0b','#ef4444','#a855f7'];
+  selSyms.forEach((s,i) => {
+    const series = chart.addLineSeries({color:palette[i%palette.length], lineWidth:2, title:s.name});
+    series.setData(normalized[s.id]);
+  });
+  chart.timeScale().fitContent();
 }
 
 let toastTimer;
